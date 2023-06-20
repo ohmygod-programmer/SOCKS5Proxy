@@ -11,23 +11,20 @@ import java.nio.channels.spi.SelectorProvider
 const val BUFFER_SIZE = 2048
 const val SOCKS_VERSION = 5
 
-enum class ATYP(val Byte: Byte) {
+enum class ATYP(val byte: Byte) {
     V4(1), DOMAIN_NAME(3), V6(4)
 }
 
-class SOCKS5Proxy(port: Int) {
+class SOCKS5Proxy(address: InetAddress, port: Int) {
     private val serverSocketChannel: ServerSocketChannel = ServerSocketChannel.open()
     private val selector = SelectorProvider.provider().openSelector()
-    private val serverAddress = ByteArray(4)
+    private var serverAddress : ByteArray
 
     init {
         serverSocketChannel.configureBlocking(false)
-        serverSocketChannel.socket().bind(InetSocketAddress(port))
+        serverSocketChannel.socket().bind(InetSocketAddress(address, port))
         serverSocketChannel.register(selector, serverSocketChannel.validOps())
-        serverAddress[0] = 192.toByte()
-        serverAddress[1] = 168.toByte()
-        serverAddress[2] = 0.toByte()
-        serverAddress[3] = 109.toByte()
+        serverAddress = address.address
     }
 
     internal class Attachment {
@@ -63,6 +60,7 @@ class SOCKS5Proxy(port: Int) {
 
     //Функция с главным циклом
     fun start() {
+        println("Proxy started!")
         while (selector.select() > -1) {
             for (key: SelectionKey in selector.selectedKeys()) {
                 try {
@@ -190,7 +188,6 @@ class SOCKS5Proxy(port: Int) {
         val attachment = key.attachment() as Attachment
         val ar: ByteArray = attachment.inBuf.array()
         if (attachment.inBuf.position() > 1) {
-            //printByteArr(attachment.inBuf.array())
             if (ar[0].compareTo(SOCKS_VERSION) != 0) {
                 attachment.outBuf.put(5)
                 attachment.outBuf.put(0)
@@ -211,7 +208,6 @@ class SOCKS5Proxy(port: Int) {
                 key.interestOpsOr(SelectionKey.OP_WRITE)
                 attachment.inBuf.clear()
                 attachment.greetingFinished = true
-                //println("Должен отправить")
             } else {
                 close(key)
             }
@@ -225,12 +221,12 @@ class SOCKS5Proxy(port: Int) {
             val port: Int
             val ipString: String
             val addr: InetAddress
-            if (ar[SOCKS5Request.ATYPByteNum] == ATYP.V4.Byte) {
+            if (ar[SOCKS5Request.ATYPByteNum] == ATYP.V4.byte) {
                 port = ByteConverter.bytesToPort(ar[SOCKS5Request.PORTByteNum], ar[SOCKS5Request.PORTByteNum + 1])
                 ipString =
                     ByteConverter.bytesToIP(ar.sliceArray(SOCKS5Request.DSTV4ByteNum until SOCKS5Request.DSTV4ByteNum + SOCKS5Request.DSTV4Size))
                 addr = InetAddress.getByName(ipString)
-            } else if (ar[SOCKS5Request.ATYPByteNum] == ATYP.DOMAIN_NAME.Byte) {
+            } else if (ar[SOCKS5Request.ATYPByteNum] == ATYP.DOMAIN_NAME.byte) {
                 val domainNameSize = ByteConverter.toPositiveInt(ar[SOCKS5Request.DSTDOMENNAMESIZEByteNum])
                 if (attachment.inBuf.position() >= SOCKS5Request.DSTDOMENNAMESIZEByteNum + 1 + domainNameSize + SOCKS5Request.PORTSize) {
                     val domain =
